@@ -1,8 +1,24 @@
 <?php
 declare(strict_types=1);
 
-final class BiologicalSexRepository
+/**
+ * BiologicalSexRepository
+ * ----------------------
+ * Repository canônico para entidades simples.
+ *
+ * Responsabilidades:
+ * - Persistir e recuperar dados de biological_sexes
+ * - Converter dados relacionais em objetos de domínio
+ * - Garantir fronteira explícita entre OO e Banco de Dados
+ *
+ * Este arquivo é MODELO para todos os outros Repositories do projeto.
+ */
+final class BiologicalSexRepository implements RepositoryInterface
 {
+    /**
+     * Conexão ativa com o banco de dados.
+     * Deve ser obtida exclusivamente via DatabaseConnection.
+     */
     private mysqli $db;
 
     public function __construct()
@@ -10,127 +26,115 @@ final class BiologicalSexRepository
         $this->db = DatabaseConnection::get();
     }
 
-    /* =========================
-       CREATE
-    ==========================*/
-    public function create(BiologicalSex $sex): int
+    /**
+     * Retorna todos os registros de biological_sexes.
+     *
+     * @return BiologicalSex[]
+     */
+    public function findAll(): array
     {
-        $stmt = $this->db->prepare(
-            'INSERT INTO biological_sexes (code, can_gestate, can_fertilize)
-             VALUES (?, ?, ?)'
-        );
+        $sql = '
+            SELECT id, code, can_gestate, can_fertilize
+            FROM biological_sexes
+            ORDER BY id
+        ';
 
-        $canGestate   = $sex->canGestate ? 1 : 0;
-        $canFertilize = $sex->canFertilize ? 1 : 0;
+        $result = $this->db->query($sql);
 
-        $stmt->bind_param(
-            'sii',
-            $sex->code,
-            $canGestate,
-            $canFertilize
-        );
-
-        $stmt->execute();
-
-        if ($stmt->errno) {
-            throw new RuntimeException($stmt->error);
+        if ($result === false) {
+            throw new RuntimeException(
+                'Failed to fetch BiologicalSex list: ' . $this->db->error
+            );
         }
 
-        return $stmt->insert_id;
+        $items = [];
+
+        while ($row = $result->fetch_assoc()) {
+            $items[] = $this->mapRowToEntity($row);
+        }
+
+        return $items;
     }
 
-    /* =========================
-       READ (by id)
-    ==========================*/
+    /**
+     * Retorna um BiologicalSex pelo ID.
+     */
     public function findById(int $id): ?BiologicalSex
     {
+        if ($id <= 0) {
+            throw new InvalidArgumentException('Invalid BiologicalSex ID.');
+        }
+
         $stmt = $this->db->prepare(
             'SELECT id, code, can_gestate, can_fertilize
              FROM biological_sexes
              WHERE id = ?'
         );
-
         $stmt->bind_param('i', $id);
-        $stmt->execute();
 
-        $row = $stmt->get_result()->fetch_assoc();
-
-        if (!$row) {
-            return null;
-        }
-
-        return new BiologicalSex(
-            (int)$row['id'],
-            $row['code'],
-            (bool)$row['can_gestate'],
-            (bool)$row['can_fertilize']
-        );
-    }
-
-    /* =========================
-       READ (by code)
-    ==========================*/
-    public function findByCode(string $code): ?BiologicalSex
-    {
-        $stmt = $this->db->prepare(
-            'SELECT id, code, can_gestate, can_fertilize
-             FROM biological_sexes
-             WHERE code = ?'
-        );
-
-        $stmt->bind_param('s', $code);
-        $stmt->execute();
-
-        $row = $stmt->get_result()->fetch_assoc();
-
-        if (!$row) {
-            return null;
-        }
-
-        return new BiologicalSex(
-            (int)$row['id'],
-            $row['code'],
-            (bool)$row['can_gestate'],
-            (bool)$row['can_fertilize']
-        );
-    }
-
-    /* =========================
-       READ (all)
-    ==========================*/
-    public function findAll(): array
-    {
-        $result = $this->db->query(
-            'SELECT id, code, can_gestate, can_fertilize
-             FROM biological_sexes
-             ORDER BY code'
-        );
-
-        $list = [];
-
-        while ($row = $result->fetch_assoc()) {
-            $list[] = new BiologicalSex(
-                (int)$row['id'],
-                $row['code'],
-                (bool)$row['can_gestate'],
-                (bool)$row['can_fertilize']
+        if (!$stmt->execute()) {
+            throw new RuntimeException(
+                'Failed to fetch BiologicalSex: ' . $stmt->error
             );
         }
 
-        return $list;
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        return $row ? $this->mapRowToEntity($row) : null;
     }
 
-    /* =========================
-       UPDATE
-    ==========================*/
-    public function update(BiologicalSex $sex): void
+    /**
+     * Cria um novo BiologicalSex.
+     *
+     * @throws InvalidArgumentException
+     * @throws RuntimeException
+     */
+    public function create(object $entity): int
     {
-        if ($sex->id === null) {
-            throw new InvalidArgumentException('BiologicalSex ID obrigatório');
+        if (!$entity instanceof BiologicalSex) {
+            throw new InvalidArgumentException('Expected BiologicalSex entity.');
         }
 
-        $canGestate   = $sex->canGestate ? 1 : 0;
-        $canFertilize = $sex->canFertilize ? 1 : 0;
+        // Fronteira explícita OO → DB
+        $canGestate   = $entity->canGestate ? 1 : 0;
+        $canFertilize = $entity->canFertilize ? 1 : 0;
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO biological_sexes (code, can_gestate, can_fertilize)
+             VALUES (?, ?, ?)'
+        );
+
+        $stmt->bind_param(
+            'sii',
+            $entity->code,
+            $canGestate,
+            $canFertilize
+        );
+
+        if (!$stmt->execute()) {
+            throw new RuntimeException(
+                'Failed to create BiologicalSex: ' . $stmt->error
+            );
+        }
+
+        $id = $this->db->insert_id;
+        $stmt->close();
+
+        return $id;
+    }
+
+    /**
+     * Atualiza um BiologicalSex existente.
+     */
+    public function update(object $entity): void
+    {
+        if (!$entity instanceof BiologicalSex || $entity->id === null) {
+            throw new InvalidArgumentException('Invalid BiologicalSex entity.');
+        }
+
+        $canGestate   = $entity->canGestate ? 1 : 0;
+        $canFertilize = $entity->canFertilize ? 1 : 0;
 
         $stmt = $this->db->prepare(
             'UPDATE biological_sexes
@@ -140,33 +144,62 @@ final class BiologicalSexRepository
 
         $stmt->bind_param(
             'siii',
-            $sex->code,
+            $entity->code,
             $canGestate,
             $canFertilize,
-            $sex->id
+            $entity->id
         );
 
-        $stmt->execute();
-
-        if ($stmt->errno) {
-            throw new RuntimeException($stmt->error);
+        if (!$stmt->execute()) {
+            throw new RuntimeException(
+                'Failed to update BiologicalSex: ' . $stmt->error
+            );
         }
+
+        $stmt->close();
     }
 
-    /* =========================
-       DELETE
-    ==========================*/
+    /**
+     * Remove um BiologicalSex pelo ID.
+     */
     public function delete(int $id): void
     {
+        if ($id <= 0) {
+            throw new InvalidArgumentException('Invalid BiologicalSex ID.');
+        }
+
         $stmt = $this->db->prepare(
             'DELETE FROM biological_sexes WHERE id = ?'
         );
-
         $stmt->bind_param('i', $id);
-        $stmt->execute();
 
-        if ($stmt->errno) {
-            throw new RuntimeException($stmt->error);
+        if (!$stmt->execute()) {
+            throw new RuntimeException(
+                'Failed to delete BiologicalSex: ' . $stmt->error
+            );
         }
+
+        if ($stmt->affected_rows === 0) {
+            throw new RuntimeException(
+                'BiologicalSex not found or already deleted.'
+            );
+        }
+
+        $stmt->close();
+    }
+
+    /**
+     * Converte uma linha do banco em entidade de domínio.
+     *
+     * 🔒 ÚNICO local autorizado a conhecer a estrutura da tabela.
+     */
+    private function mapRowToEntity(array $row): BiologicalSex
+    {
+        return new BiologicalSex(
+            (int) $row['id'],
+            $row['code'],
+            (bool) $row['can_gestate'],
+            (bool) $row['can_fertilize']
+        );
     }
 }
