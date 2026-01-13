@@ -1,0 +1,18 @@
+# Configurações sensíveis
+config.inc
+config/*.php
+
+# Ambiente local
+.env
+.env.local
+
+# Cache e logs
+cache/
+logs/
+tmp/
+
+# IDE / SO
+.vscode/
+.idea/
+*.swp
+.DS_Store
